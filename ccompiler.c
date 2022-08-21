@@ -1,5 +1,108 @@
+#include <ctype.h>
+#include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+typedef enum
+{
+    TK_RESERVE, // 記号トークン
+    TK_NUM, // 整数トークン
+    TK_EOF, // 終端トークン
+} TokenKind;
+
+typedef struct Token Token;
+
+struct Token
+{
+    TokenKind kind; //トークンの種類
+    Token *next;    // 次のトークン
+    int val;        // kind=TK_NUMの時の数値
+    char *str;      // トークン文字列
+};
+
+Token *token;
+
+void error(char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
+
+bool consume(char op)
+{
+    if(token->kind != TK_RESERVE || token->str[0] != op)
+        return false;
+    token = token->next;
+    return true;
+}
+
+void expect(char op)
+{
+    if(token->kind != TK_RESERVE || token->str[0] != op)
+        error("%cではありません", op);
+    token = token->next;
+}
+
+int expect_number()
+{
+    if(token->kind != TK_NUM)
+        error("数ではありません");
+    int val = token->val;
+    token = token->next;
+    return val;
+}
+
+bool at_eof()
+{
+    return token->kind == TK_EOF;
+}
+
+Token *new_token(TokenKind kind, Token *cur, char *str)
+{
+    Token *tok = calloc(1, sizeof(Token));
+    tok->kind = kind;
+    tok->str = str;
+    cur->next = tok;
+    return tok;
+}
+
+Token *tokenize(char *p)
+{
+    Token head;
+    head.next = NULL;
+    Token *cur = &head;
+
+    while(*p)
+    {
+        if(isspace(*p))
+        {
+            p++;
+            continue;
+        }
+
+        if(*p == '+' || *p == '-')
+        {
+            cur = new_token(TK_RESERVE, cur, p++);
+            continue;
+        }
+
+        if(isdigit(*p))
+        {
+            cur = new_token(TK_NUM, cur, p);
+            cur->val = strtol(p, &p, 10);
+            continue;
+        }
+        error("トークナイズできません");
+    }
+
+    new_token(TK_EOF, cur, p);
+    return head.next;
+}
 
 int main(int argc, char **argv)
 {
@@ -8,30 +111,25 @@ int main(int argc, char **argv)
         fprintf(stderr, "引数の個数が正しくありません\n");
         return 1;
     }
-    char *p = argv[1];
+    
+    token = tokenize(argv[1]);
 
     printf(".intel_syntax noprefix\n");
     printf(".global main\n");
     printf("main:\n");
-    printf("    mov rax, %ld\n", strtol(p, &p, 10));
 
-    while(*p)
+    printf("    mov rax, %d\n", expect_number());
+
+    while(!at_eof())
     {
-        if(*p == '+')
+        if(consume('+'))
         {
-            p++;
-            printf("    add rax, %ld\n", strtol(p, &p, 10));
+            printf("    add rax, %d\n", expect_number());
             continue;
         }
 
-        if(*p == '-')
-        {
-            p++;
-            printf("    sub rax, %ld\n", strtol(p, &p, 10));
-            continue;
-        }
-        fprintf(stderr, "予期しない文字です: %c\n", *p);
-        return 1;
+        expect('-');
+        printf("    sub rax, %d\n", expect_number());
     }
 
     printf("    ret\n");
